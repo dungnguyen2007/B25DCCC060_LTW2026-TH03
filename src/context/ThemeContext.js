@@ -1,19 +1,16 @@
-import {
-  createContext,
-  useContext,
-  useState,
-  useCallback,
-  useMemo,
-} from "react";
+import { createContext, useContext, useCallback, useMemo } from "react";
+
+import useLocalStorage from "../hooks/useLocalStorage";
+import { STORAGE_KEYS } from "../storage";
 
 const ThemeContext = createContext();
 
 export const ThemeProvider = ({ children }) => {
-  const [theme, setTheme] = useState("light");
+  const [theme, setTheme] = useLocalStorage(STORAGE_KEYS.THEME, "light");
 
   const toggleTheme = useCallback(() => {
     setTheme((prev) => (prev === "light" ? "dark" : "light"));
-  }, []);
+  }, [setTheme]);
 
   const value = useMemo(
     () => ({
