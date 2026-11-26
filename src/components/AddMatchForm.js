@@ -1,8 +1,18 @@
 import { useState, useRef } from "react";
+import { useSelector, useDispatch } from "react-redux";
+
 import { TEAMS, ROUNDS } from "../data";
 import { isValidGoals, getTeamName } from "../utils";
 
-const AddMatchForm = ({ matches, dispatch }) => {
+import { selectMatches, addMatch } from "../features/matchesSlice";
+
+import { useNotice } from "../context/NoticeContext";
+
+const AddMatchForm = () => {
+  const matches = useSelector(selectMatches);
+  const dispatch = useDispatch();
+  const showNotice = useNotice();
+
   const homeRef = useRef(null);
 
   const initialForm = {
@@ -19,15 +29,10 @@ const AddMatchForm = ({ matches, dispatch }) => {
   const handleChange = (e) => {
     const { name, value } = e.target;
 
-    setForm({
-      ...form,
+    setForm((prev) => ({
+      ...prev,
       [name]: value,
-    });
-
-    setErrors({
-      ...errors,
-      [name]: "",
-    });
+    }));
   };
 
   const handleSubmit = (e) => {
@@ -37,13 +42,13 @@ const AddMatchForm = ({ matches, dispatch }) => {
 
     const home = Number(form.home);
     const away = Number(form.away);
+    const homeGoals = Number(form.homeGoals);
+    const awayGoals = Number(form.awayGoals);
 
-    // Kiểm tra đội nhà
     if (!form.home) {
       newErrors.home = "Hãy chọn đội nhà";
     }
 
-    // Kiểm tra đội khách
     if (!form.away) {
       newErrors.away = "Hãy chọn đội khách";
     } else if (form.home && home === away) {
@@ -59,17 +64,11 @@ const AddMatchForm = ({ matches, dispatch }) => {
       newErrors.away = "Hai đội đã đá với nhau rồi";
     }
 
-    // Kiểm tra bàn thắng nhà
-    const homeGoals = Number(form.homeGoals);
-
-    if (form.homeGoals === "" || !isValidGoals(homeGoals)) {
+    if (!isValidGoals(homeGoals) || form.homeGoals === "") {
       newErrors.homeGoals = "Số bàn thắng phải là số nguyên từ 0 đến 20";
     }
 
-    // Kiểm tra bàn thắng khách
-    const awayGoals = Number(form.awayGoals);
-
-    if (form.awayGoals === "" || !isValidGoals(awayGoals)) {
+    if (!isValidGoals(awayGoals) || form.awayGoals === "") {
       newErrors.awayGoals = "Số bàn thắng phải là số nguyên từ 0 đến 20";
     }
 
@@ -79,33 +78,34 @@ const AddMatchForm = ({ matches, dispatch }) => {
       return;
     }
 
-    // Thêm trận đấu
-    dispatch({
-      type: "ADD",
-      payload: {
-        round: Number(form.round),
-        home,
-        away,
-        homeGoals,
-        awayGoals,
-      },
-    });
+    const maxId = matches.reduce((max, match) => Math.max(max, match.id), 0);
 
-    // Xóa form
+    const newMatch = {
+      id: maxId + 1,
+      round: Number(form.round),
+      home,
+      away,
+      homeGoals,
+      awayGoals,
+    };
+
+    dispatch(addMatch(newMatch));
+
+    showNotice(`Đã thêm trận ${getTeamName(home)} - ${getTeamName(away)}`);
+
     setForm(initialForm);
     setErrors({});
 
-    // Đưa con trỏ về ô đội nhà
-    homeRef.current.focus();
+    homeRef.current?.focus();
   };
 
   return (
-    <div>
+    <section>
       <h2>Thêm trận đấu</h2>
 
       <form onSubmit={handleSubmit}>
         <div>
-          <label htmlFor="round">Vòng:</label>
+          <label htmlFor="round">Vòng</label>
 
           <select
             id="round"
@@ -122,7 +122,7 @@ const AddMatchForm = ({ matches, dispatch }) => {
         </div>
 
         <div>
-          <label htmlFor="home">Đội nhà:</label>
+          <label htmlFor="home">Đội nhà</label>
 
           <select
             id="home"
@@ -144,7 +144,7 @@ const AddMatchForm = ({ matches, dispatch }) => {
         </div>
 
         <div>
-          <label htmlFor="away">Đội khách:</label>
+          <label htmlFor="away">Đội khách</label>
 
           <select
             id="away"
@@ -165,12 +165,14 @@ const AddMatchForm = ({ matches, dispatch }) => {
         </div>
 
         <div>
-          <label htmlFor="homeGoals">Bàn thắng đội nhà:</label>
+          <label htmlFor="homeGoals">Bàn thắng đội nhà</label>
 
           <input
-            type="number"
             id="homeGoals"
             name="homeGoals"
+            type="number"
+            min="0"
+            max="20"
             value={form.homeGoals}
             onChange={handleChange}
           />
@@ -179,12 +181,14 @@ const AddMatchForm = ({ matches, dispatch }) => {
         </div>
 
         <div>
-          <label htmlFor="awayGoals">Bàn thắng đội khách:</label>
+          <label htmlFor="awayGoals">Bàn thắng đội khách</label>
 
           <input
-            type="number"
             id="awayGoals"
             name="awayGoals"
+            type="number"
+            min="0"
+            max="20"
             value={form.awayGoals}
             onChange={handleChange}
           />
@@ -194,7 +198,7 @@ const AddMatchForm = ({ matches, dispatch }) => {
 
         <button type="submit">Thêm trận</button>
       </form>
-    </div>
+    </section>
   );
 };
 

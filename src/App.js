@@ -1,9 +1,7 @@
-import { useReducer, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSelector, useDispatch } from "react-redux";
 
-import { matchesReducer } from "./matchesReducer";
-import useFetch from "./hooks/useFetch";
-
-import { ROUNDS, RESULT_LABELS, formatDiff } from "./data";
+import { ROUNDS, RESULT_LABELS } from "./data";
 
 import {
   getTeamName,
@@ -13,37 +11,51 @@ import {
   isValidGoals,
 } from "./utils";
 
+import useFetch from "./hooks/useFetch";
+
+import {
+  selectMatches,
+  setMatches,
+  setGoals,
+  removeMatch,
+} from "./features/matchesSlice";
+
+import { useTheme } from "./context/ThemeContext";
+import { useNotice } from "./context/NoticeContext";
+
 import AddMatchForm from "./components/AddMatchForm";
+import StandingsTable from "./components/StandingsTable";
+import GoalPlanner from "./components/GoalPlanner";
 
 const BUILD_TAG = "bd-5918";
 
 const App = () => {
-  const { data, loading, error } = useFetch("/data/matches.json");
+  const dispatch = useDispatch();
 
-  const [matches, dispatch] = useReducer(matchesReducer, []);
+  const matches = useSelector(selectMatches);
+  const [selectedRound, setSelectedRound] = useState("all");
 
-  const [round, setRound] = useState("all");
-
-  // Nạp dữ liệu ban đầu
-  useEffect(() => {
-    if (data) {
-      dispatch({
-        type: "LOAD",
-        payload: data,
-      });
-    }
-  }, [data]);
-
-  // Lọc trận đấu theo vòng
   const filteredMatches = useMemo(() => {
-    if (round === "all") {
+    if (selectedRound === "all") {
       return matches;
     }
 
-    return matches.filter((match) => match.round === Number(round));
-  }, [matches, round]);
+    return matches.filter((match) => match.round === Number(selectedRound));
+  }, [matches, selectedRound]);
 
-  // Tính bảng xếp hạng
+  const { theme, toggleTheme } = useTheme();
+  const showNotice = useNotice();
+
+  const { data, loading, error } = useFetch("/data/matches.json");
+
+  // Đưa dữ liệu tải từ file JSON vào Redux
+  useEffect(() => {
+    if (data) {
+      dispatch(setMatches(data));
+    }
+  }, [data, dispatch]);
+
+  // Tính bảng xếp hạng từ tất cả trận đấu
   const standings = useMemo(() => {
     return calcStandings(matches);
   }, [matches]);
@@ -53,210 +65,194 @@ const App = () => {
     return calcMatchStats(filteredMatches);
   }, [filteredMatches]);
 
-  // Đội dẫn đầu
-  const leader =
-    standings.length > 0 && matches.length > 0 ? standings[0] : null;
-
-  // Sửa tỷ số
-  const handleGoals = (id, homeGoals, awayGoals) => {
-    if (!isValidGoals(homeGoals) || !isValidGoals(awayGoals)) {
+  // Sửa tỷ số trận đấu
+  const handleGoals = (match, type, value) => {
+    if (!isValidGoals(value)) {
       return;
     }
 
-    dispatch({
-      type: "SET_GOALS",
-      payload: {
-        id,
+    const homeGoals = type === "home" ? value : match.homeGoals;
+
+    const awayGoals = type === "away" ? value : match.awayGoals;
+
+    dispatch(
+      setGoals({
+        id: match.id,
         homeGoals,
         awayGoals,
-      },
-    });
+      }),
+    );
   };
 
   // Xóa trận đấu
-  const handleRemove = (id) => {
-    dispatch({
-      type: "REMOVE",
-      payload: id,
-    });
+  const handleRemove = (match) => {
+    dispatch(removeMatch(match.id));
+
+    showNotice(
+      `Đã xóa trận ${getTeamName(match.home)} - ${getTeamName(match.away)}`,
+    );
   };
 
-  if (loading) {
-    return <h2>Đang tải lịch thi đấu...</h2>;
-  }
-
-  if (error) {
-    return <h2>Không tải được lịch thi đấu</h2>;
-  }
-
   return (
-    <div className="app" data-build={BUILD_TAG}>
-      <h1>GIẢI BÓNG ĐÁ KHOA</h1>
+    <div className={`app ${theme}`} data-build={BUILD_TAG}>
+      <header>
+        <h1>Giải bóng đá khoa</h1>
 
-      {/* BẢNG XẾP HẠNG */}
+        <button onClick={toggleTheme}>
+          {theme === "light" ? "Chế độ tối" : "Chế độ sáng"}
+        </button>
+      </header>
 
-      <h2>Bảng xếp hạng</h2>
+      {loading && <p>Đang tải lịch thi đấu...</p>}
 
-      <table>
-        <thead>
-          <tr>
-            <th>Hạng</th>
-            <th>Đội</th>
-            <th>Trận</th>
-            <th>Thắng</th>
-            <th>Hòa</th>
-            <th>Thua</th>
-            <th>BT</th>
-            <th>BB</th>
-            <th>HS</th>
-            <th>Điểm</th>
-          </tr>
-        </thead>
+      {error && <p role="alert">Không tải được lịch thi đấu</p>}
 
-        <tbody>
-          {standings.map((team, index) => (
-            <tr
-              key={team.id}
-              style={index === standings.length - 1 ? { color: "#c62828" } : {}}
-            >
-              <td>{index + 1}</td>
-              <td>{team.name}</td>
-              <td>{team.played}</td>
-              <td>{team.won}</td>
-              <td>{team.drawn}</td>
-              <td>{team.lost}</td>
-              <td>{team.gf}</td>
-              <td>{team.ga}</td>
-              <td>{formatDiff(team.diff)}</td>
-              <td>{team.points}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {!loading && !error && (
+        <>
+          {/* BẢNG XẾP HẠNG */}
+          <section>
+            <StandingsTable standings={standings} />
+          </section>
 
-      {/* THỐNG KÊ */}
+          {/* THỐNG KÊ */}
+          <section>
+            <h2>Thống kê</h2>
 
-      <h2>Thống kê</h2>
+            <p>Số trận: {stats.count}</p>
 
-      <p>Số trận: {stats.count}</p>
+            <p>Tổng số bàn thắng: {stats.goals}</p>
 
-      <p>Tổng số bàn thắng: {stats.goals}</p>
+            <p>Bàn thắng mỗi trận: {stats.average.toFixed(2)}</p>
 
-      <p>Bàn thắng mỗi trận: {stats.average.toFixed(2)}</p>
+            <p>
+              Đội dẫn đầu:{" "}
+              {standings.length > 0 && stats.count > 0
+                ? `${standings[0].name} (${standings[0].points} điểm)`
+                : "—"}
+            </p>
+          </section>
 
-      <p>
-        Đội dẫn đầu: {leader ? `${leader.name} (${leader.points} điểm)` : "—"}
-      </p>
+          {/* LỊCH THI ĐẤU */}
+          <section>
+            <h2>Lịch thi đấu</h2>
 
-      {/* LỊCH THI ĐẤU */}
+            <div>
+              <label htmlFor="roundFilter">Xem vòng:</label>
 
-      <h2>Lịch thi đấu</h2>
+              <select
+                id="roundFilter"
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setSelectedRound(value);
+                }}
+                value={selectedRound}
+              >
+                <option value="all">Tất cả</option>
 
-      <label htmlFor="round">Xem vòng: </label>
+                {ROUNDS.map((round) => (
+                  <option key={round} value={round}>
+                    Vòng {round}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-      <select
-        id="round"
-        value={round}
-        onChange={(e) => setRound(e.target.value)}
-      >
-        <option value="all">Tất cả</option>
+            {filteredMatches.length === 0 ? (
+              <p>Chưa có trận đấu nào</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Vòng</th>
+                    <th>Đội nhà</th>
+                    <th>BT nhà</th>
+                    <th>BT khách</th>
+                    <th>Đội khách</th>
+                    <th>Kết quả</th>
+                    <th>Xóa</th>
+                  </tr>
+                </thead>
 
-        {ROUNDS.map((r) => (
-          <option key={r} value={r}>
-            Vòng {r}
-          </option>
-        ))}
-      </select>
+                <tbody>
+                  {filteredMatches.map((match) => {
+                    const result = getResult(match);
 
-      {filteredMatches.length === 0 ? (
-        <p>Chưa có trận đấu nào</p>
-      ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Vòng</th>
-              <th>Đội nhà</th>
-              <th>BT nhà</th>
-              <th>BT khách</th>
-              <th>Đội khách</th>
-              <th>Kết quả</th>
-              <th>Xóa</th>
-            </tr>
-          </thead>
+                    const homeName = getTeamName(match.home);
 
-          <tbody>
-            {filteredMatches.map((match) => {
-              const result = getResult(match);
+                    const awayName = getTeamName(match.away);
 
-              const homeName = getTeamName(match.home);
-              const awayName = getTeamName(match.away);
+                    return (
+                      <tr
+                        key={match.id}
+                        style={{
+                          background:
+                            result === "draw"
+                              ? "rgba(255, 193, 7, 0.25)"
+                              : "transparent",
+                        }}
+                      >
+                        <td>{match.round}</td>
 
-              return (
-                <tr
-                  key={match.id}
-                  style={
-                    result === "draw"
-                      ? {
-                          backgroundColor: "rgba(255, 193, 7, 0.25)",
-                        }
-                      : {}
-                  }
-                >
-                  <td>Vòng {match.round}</td>
+                        <td>{homeName}</td>
 
-                  <td>{homeName}</td>
+                        <td>
+                          <input
+                            type="number"
+                            min="0"
+                            max="20"
+                            value={match.homeGoals}
+                            aria-label={`Bàn thắng nhà ${homeName} - ${awayName}`}
+                            onChange={(e) => {
+                              handleGoals(
+                                match,
+                                "home",
+                                e.target.valueAsNumber,
+                              );
+                            }}
+                          />
+                        </td>
 
-                  <td>
-                    <input
-                      type="number"
-                      min="0"
-                      max="20"
-                      aria-label={`Bàn thắng nhà ${homeName} - ${awayName}`}
-                      value={match.homeGoals}
-                      onChange={(e) => {
-                        const value = e.target.valueAsNumber;
+                        <td>
+                          <input
+                            type="number"
+                            min="0"
+                            max="20"
+                            value={match.awayGoals}
+                            aria-label={`Bàn thắng khách ${homeName} - ${awayName}`}
+                            onChange={(e) => {
+                              handleGoals(
+                                match,
+                                "away",
+                                e.target.valueAsNumber,
+                              );
+                            }}
+                          />
+                        </td>
 
-                        if (isValidGoals(value)) {
-                          handleGoals(match.id, value, match.awayGoals);
-                        }
-                      }}
-                    />
-                  </td>
+                        <td>{awayName}</td>
 
-                  <td>
-                    <input
-                      type="number"
-                      min="0"
-                      max="20"
-                      aria-label={`Bàn thắng khách ${homeName} - ${awayName}`}
-                      value={match.awayGoals}
-                      onChange={(e) => {
-                        const value = e.target.valueAsNumber;
+                        <td>{RESULT_LABELS[result]}</td>
 
-                        if (isValidGoals(value)) {
-                          handleGoals(match.id, match.homeGoals, value);
-                        }
-                      }}
-                    />
-                  </td>
+                        <td>
+                          <button onClick={() => handleRemove(match)}>
+                            Xóa
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </section>
 
-                  <td>{awayName}</td>
+          {/* THÊM TRẬN */}
+          <AddMatchForm />
 
-                  <td>{RESULT_LABELS[result]}</td>
-
-                  <td>
-                    <button onClick={() => handleRemove(match.id)}>Xóa</button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+          {/* MỤC TIÊU ĐIỂM */}
+          <GoalPlanner standings={standings} />
+        </>
       )}
-
-      {/* FORM THÊM TRẬN */}
-
-      <AddMatchForm matches={matches} dispatch={dispatch} />
     </div>
   );
 };
